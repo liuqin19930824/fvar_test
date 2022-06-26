@@ -103,7 +103,7 @@ df_nn_soilm_obs <- train_predict_fvar(
   soilm_threshold = 0.6,
   weights         = NA, 
   verbose         = TRUE
-  )
+  )#here comes the problem
 ```
 
 ## Evaluate performance
