@@ -73,13 +73,30 @@ The settings are a named list that must contain the following variables:
 
 To prepare training data, removing NAs and outliers, in a standardized way, do:
 ```r
+source("./R/prepare_trainingdata_fvar.R")
+source('./R/remove_outliers.R')
+library(tidyr)
 df_train <- prepare_trainingdata_fvar( df_fluxnet, settings )
 ```
-
+#works well until here_Qin
 ## Train model and predict fvar
 
 Train models and get `fvar` (is returned as one column in the returned data frame). Here, we specify the soil moisture threshold to separate training data into moist and dry days to 0.6 (fraction of water holding capacity). Deriving an optimal threshold is implemented by the functions `profile_soilmthreshold_fvar()` and `get_opt_threshold()` (see below).
 ```r
+source("./R/train_predict_fvar.R")
+source("./R/predict_nn.R")
+source("./R/predict_nn_keras.R")
+source("./R/profile_soilmthreshold_fvar.R")
+source("./R/get_opt_threshold.R")
+library(rsofun)
+library(dplyr)
+library(readr)
+library(lubridate)
+library(ggplot2)
+library(keras)
+library( nnet )
+library( caret )
+library( lattice)
 df_nn_soilm_obs <- train_predict_fvar( 
   df_train,
   settings,
