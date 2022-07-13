@@ -1,33 +1,14 @@
 # fVAR algorithm
-
-## Purpose
-
-This algorithm makes use of the typical threshold behaviour of vegetation responses (e.g., GPP, or canopy conductance) to soil moisture to detect and quantify its impact on reducing fluxes/rates. The method makes use of machine learning (neural networks, NN) and is described in Stocker et al. (2018).
-
 ```r
+#before opening R studio,activate the requrired python environment in anaconda prompt
+library(reticulate)
 library(rsofun)
 library(dplyr)
 library(readr)
 library(lubridate)
 library(ggplot2)
+
 ```
-
-# Installation
-
-## Development release
-
-To install and load the fvar package (development release) run the following command in your R terminal: 
-```r
-if(!require(devtools)){install.packages(devtools)}
-devtools::install_github( "stineb/fvar", build_vignettes = FALSE )
-library(fvar)
-```
-
-## Stable release
-
-The fvar R package is not yet available on CRAN. We're working on it.
-
-
 # Usage example
 
 ## Get FLUXNET 2015 data
@@ -51,12 +32,12 @@ This named list is used by several functions of the package.
 
 settings <- list( 
   target        = "GPP_NT_VUT_REF", 
-  predictors    = c("temp_day","vpd_day", "ppfd", "fpar"), 
+  predictors    = c("temp_day","vpd_day", "ppfd", "fpar","wcont_splash"), 
   varnams_soilm = "wcont_splash",
   nnodes        = 10,
   nrep          = 3,
   package       = "nnet"
-  )
+  )#注意这里的predictors还是给它添加了soilm，因为下一个函数train_predict_fvar马上就用了
 ```
 
 The settings are a named list that must contain the following variables:
@@ -73,9 +54,23 @@ The settings are a named list that must contain the following variables:
 
 To prepare training data, removing NAs and outliers, in a standardized way, do:
 ```r
-source("./R/prepare_trainingdata_fvar.R")
-source('./R/remove_outliers.R')
 library(tidyr)
+source("./R/align_events.R")
+source("./R/get_consecutive.R")
+source("./R/get_droughts_fvar.R")
+source("./R/get_obs_bysite_fluxnet2015.R")
+source("./R/get_opt_threshold.R")
+source("./R/identify_pattern.R")
+source("./R/mct.R")
+source("./R/plot_fvar_cwd.R")
+source("./R/predict_nn.R")
+source("./R/predict_nn_keras.R")
+source("./R/prepare_trainingdata_fvar.R")
+source("./R/profile_soilmthreshold_fvar.R")
+source("./R/prune_droughts.R")
+source("./R/remove_outliers.R")
+source("./R/test_performance_fvar.R")
+source("./R/train_predict_fvar.R")#这里先source了所有可能需要用到的函数
 df_train <- prepare_trainingdata_fvar( df_fluxnet, settings )
 ```
 #works well until here_Qin
@@ -83,20 +78,10 @@ df_train <- prepare_trainingdata_fvar( df_fluxnet, settings )
 
 Train models and get `fvar` (is returned as one column in the returned data frame). Here, we specify the soil moisture threshold to separate training data into moist and dry days to 0.6 (fraction of water holding capacity). Deriving an optimal threshold is implemented by the functions `profile_soilmthreshold_fvar()` and `get_opt_threshold()` (see below).
 ```r
-source("./R/train_predict_fvar.R")
-source("./R/predict_nn.R")
-source("./R/predict_nn_keras.R")
-source("./R/profile_soilmthreshold_fvar.R")
-source("./R/get_opt_threshold.R")
-library(rsofun)
-library(dplyr)
-library(readr)
-library(lubridate)
-library(ggplot2)
 library(keras)
+#library( tensorflow)
 library( nnet )
 library( caret )
-library( lattice)
 df_nn_soilm_obs <- train_predict_fvar( 
   df_train,
   settings,
