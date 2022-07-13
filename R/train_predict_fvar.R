@@ -94,31 +94,32 @@ train_predict_fvar_byrep <- function( irep, df, idxs_moist, settings, weights=NA
     # settings$varnams_soilm <- df %>% dplyr::select( starts_with("soilm") ) %>% names()
     settings$predictors_without_soilm <- settings$predictors[ !(settings$predictors %in% settings$varnams_soilm) ]
     
-    # out_nn_moist <- predict_nn( 
-    #   data       = df[ idxs_moist, ],
-    #   weights    = weights[ idxs_moist ],
-    #   predictors = settings$predictors_without_soilm,
-    #   nam_target = settings$target,
-    #   do_predict = TRUE,
-    #   package    = settings$package,
-    #   lifesign   = "full",
-    #   seed       = irep,
-    #   hidden     = settings$nnodes_pot
-    # )
+    out_nn_moist <- predict_nn(
+      data       = df[ idxs_moist, ],
+      weights    = weights[ idxs_moist ],
+      predictors = settings$predictors_without_soilm,
+      nam_target = settings$target,
+      do_predict = TRUE,
+      package    = settings$package,
+      lifesign   = "full",
+      seed       = irep,
+      hidden     = settings$nnodes_pot
+    )#这里先启用nn吧，不用keras看会怎么样
+   print(out_nn_moist)
 
     ## xxx try keras-specific. To do: make this function call flexible
-    out_nn_moist <- predict_nn_keras( df[ idxs_moist, ], 
-                                      nam_target          = settings$target, 
-                                      predictors          = settings$predictors_without_soilm, 
-                                      prop                = 0.75, # make this a setting
-                                      num_epochs          = 100, 
-                                      batch_size          = 128, 
-                                      val_size            = 0.15,
-                                      learning_rate       = 0.001,
-                                      num_layers          = 3,
-                                      num_units_per_layer = 8,  # settings$nnodes_pot,
-                                      print_model_summary = FALSE
-                                      )
+    # out_nn_moist <- predict_nn_keras( df[ idxs_moist, ], 
+    #                                   nam_target          = settings$target, 
+    #                                   predictors          = settings$predictors_without_soilm, 
+    #                                   prop                = 0.75, # make this a setting
+    #                                   num_epochs          = 100, 
+    #                                   batch_size          = 128, 
+    #                                   val_size            = 0.15,
+    #                                   learning_rate       = 0.001,
+    #                                   num_layers          = 3,
+    #                                   num_units_per_layer = 8,  # settings$nnodes_pot,
+    #                                   print_model_summary = FALSE
+    #                                   )
 
     
     # ## Evaluate predictions of good days model
@@ -141,7 +142,8 @@ train_predict_fvar_byrep <- function( irep, df, idxs_moist, settings, weights=NA
       nn         = out_nn_moist$nn, 
       do_predict = TRUE, 
       package    = settings$package
-    )
+    )#这里的potential是针对所有数据的
+    print(out_nn_pot)
     
     # ## Evaluate predictions of moist days model
     # stats_nn_pot <- rsofun::analyse_modobs(
@@ -163,7 +165,8 @@ train_predict_fvar_byrep <- function( irep, df, idxs_moist, settings, weights=NA
       package    = settings$package,
       seed       = irep,
       hidden     = settings$nnedoes_act
-    )
+    )#这里的act应该是针对所有数据的
+    print(out_nn_act)
     
     # ## get statistics of mod vs. obs of all-days full model
     # stats_nn_act <- rsofun::analyse_modobs( 
@@ -188,7 +191,7 @@ train_predict_fvar_byrep <- function( irep, df, idxs_moist, settings, weights=NA
       left_join(df[ idxs_moist, ] %>% 
                   dplyr::select(settings$rowid) %>% 
                   mutate(idx_pot = 1:n()),
-                by = "idx_pot")
+                by = "idx_pot")#这里行是不是对应不上？
     
     df_cv <- df_cv_act %>% 
       left_join(df_cv_pot, by = settings$rowid) %>% 
@@ -237,5 +240,6 @@ train_predict_fvar_byrep <- function( irep, df, idxs_moist, settings, weights=NA
   return(list(df_all = df_all, df_cv = df_cv, nn_act = out_nn_act, nn_moist = out_nn_moist))	
   
 }
+print(df_all,df_cv,out_nn_act,out_nn_moist)
 
 

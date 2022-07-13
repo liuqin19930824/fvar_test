@@ -109,3 +109,4 @@ predict_nn <- function( data, predictors, nam_target, weights=NULL, nn=NULL, do_
   return( list( nn = nn, df_cv = df_cv, df_all = df_all ) )
 
 }
+save(nn,df_cv,df_all)
