@@ -20,8 +20,8 @@ prepare_trainingdata_fvar <- function( df, settings ){
   	## Get observational soil moisture data (not the same number of layers available for all sites)
   	##------------------------------------------------
   	## normalise to within zero and one
-	  mutate_at( vars(one_of(settings$varnams_soilm)), list(~norm_to_max(.)) ) %>% 
-	
+	  #mutate_at( vars(one_of(settings$varnams_soilm)), list(~norm_to_max(.)) ) %>% 
+    mutate_at( vars(one_of(settings$predictors)), list(~norm_to_max(.)) ) %>%
     # ## get mean observational soil moisture across different depths (if available)
     # mutate( soilm_mean = apply( dplyr::select( ., starts_with("SWC_")), 1, FUN = mean, na.rm = TRUE ) ) %>%
     # mutate( soilm_mean = ifelse( is.nan(soilm_mean), NA, soilm_mean ) ) %>%

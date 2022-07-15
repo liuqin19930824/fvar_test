@@ -184,14 +184,15 @@ train_predict_fvar_byrep <- function( irep, df, idxs_moist, settings, weights=NA
       left_join(df %>% 
                   dplyr::select(settings$rowid) %>% 
                   mutate(idx_act = 1:n()),
-                by = "idx_act")
+                by = "idx_act")#by这里用的是包含_act行的ID；setNames(object,name);paste0(...,collapse = NULL)可以把一系列东西无空格地
+    #连起来形成一个新的；所以这句话的功能是给原数据从左边加了一列表头为df_cv_act的列
     
     df_cv_pot <- out_nn_moist$df_cv %>%
       setNames(paste0(names(.), "_pot")) %>% 
       left_join(df[ idxs_moist, ] %>% 
                   dplyr::select(settings$rowid) %>% 
                   mutate(idx_pot = 1:n()),
-                by = "idx_pot")#这里行是不是对应不上？
+                by = "idx_pot")#同上
     
     df_cv <- df_cv_act %>% 
       left_join(df_cv_pot, by = settings$rowid) %>% 
@@ -240,6 +241,6 @@ train_predict_fvar_byrep <- function( irep, df, idxs_moist, settings, weights=NA
   return(list(df_all = df_all, df_cv = df_cv, nn_act = out_nn_act, nn_moist = out_nn_moist))	
   
 }
-print(df_all,df_cv,out_nn_act,out_nn_moist)
+
 
 
