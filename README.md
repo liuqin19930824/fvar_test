@@ -1,11 +1,14 @@
 #fVAR algorithm
-
+```r
 library(reticulate);
 library(rsofun)
 library(dplyr)
+library(plyr)
 library(readr)
 library(lubridate)
 library(ggplot2)
+library(visdat)
+```
 
 # Usage example
 
@@ -22,12 +25,6 @@ load("./data/df_fluxnet.Rdata")
 
 This named list is used by several functions of the package.
 ```r
-# ## use all observational soil moisture data
-# varnams_soilm <- df_fluxnet %>% 
-#   dplyr::select( starts_with("SWC_") ) %>% 
-#   dplyr::select( -ends_with("QC") ) %>% 
-#   names()
-
 settings <- list(
   target        = "GPP_NT_VUT_REF", 
   predictors    = c("temp_day","vpd_day", "ppfd", "fpar","wcont_splash"), 
@@ -70,9 +67,8 @@ source("./R/prune_droughts.R")
 source("./R/remove_outliers.R")
 source("./R/test_performance_fvar.R")
 source("./R/train_predict_fvar.R")#这里先source了所有可能需要用到的函数
-df_train <- prepare_trainingdata_fvar( df_fluxnet, settings )#这一步主要是按照setting进行了筛选以及去掉空值之类的，但是这里好像并没有均一化？
+df_train <- prepare_trainingdata_fvar( df_fluxnet, settings )
 ```
-#works well until here_Qin
 ## Train model and predict fvar
 
 Train models and get `fvar` (is returned as one column in the returned data frame). Here, we specify the soil moisture threshold to separate training data into moist and dry days to 0.6 (fraction of water holding capacity). Deriving an optimal threshold is implemented by the functions `profile_soilmthreshold_fvar()` and `get_opt_threshold()` (see below).
@@ -92,92 +88,152 @@ df_nn_soilm_obs <- train_predict_fvar(
   verbose         = TRUE
   )
 ```
+```{r}
 out <- df_nn_soilm_obs#here we use out becase Francesco used it, to keep consistent
 df_all <- df_nn_soilm_obs$df_all
 #要读出来才能存
 write.csv (df_all,"df_all_2.csv",col.names = NULL, row.names = FALSE)
 #将df_all存成csv格式
+```
+## Evaluate performance
 
-## Test performance of NN models
-1. NN$_\text{act}$ has no systematic bias related to the level of soil moisture.
-#即要确保预测得到的act的偏差与土壤水含量无关→模型整体还是可行的
-```{r}
-df_test <- out$df_all %>% 
+The function `test_performance_fvar()` returns a list of all ggplot objects and a data frame with evaluation results for multiple tests.
+```r
+testresults_fvar <- test_performance_fvar(out$df_all,settings)
+```
+#if for details
+
+## 1. NNact has no systematic bias related to the level of soil moisture.
+library(LSD)
+library (ggthemes)
+library (RColorBrewer)
+library (rbeni)
+#load above library first before you perform following ones
+df_test_performance <- df_all %>% 
   mutate(bias_act = nn_act - obs,
          bias_pot = nn_pot - obs,
          soilm_bin = cut(soilm, 10),
          ratio_act = nn_act / obs,
          ratio_pot = nn_pot / obs
-         ) #在湿润条件下得到的这俩ratio接近1，而在干旱条件下则大于1则为模型整体正常
-         
-df_test %>% 
+  ) 
+
+df_test_performance %>%
   tidyr::pivot_longer(cols = c(bias_act, bias_pot), names_to = "source", values_to = "bias") %>% 
   ggplot(aes(x = soilm_bin, y = bias, fill = source)) +
   geom_boxplot() +
   geom_hline(aes(yintercept = 0.0), linetype = "dotted") +
   labs(title = "Bias vs. soil moisture")
-```
-This can be tested using a linear regression model of bias vs. soil moisture, testing whether the slope is significantly different from zero.
-```{r}
-linmod <- lm(bias_act ~ soilm, data = df_test)
+## test whether slope is significantly different from zero (0 is within slope estimate +/- standard error of slope estimate)
+linmod <- lm(bias_act ~ soilm, data = df_test_performance)
 testsum <- summary(linmod)
 slope_mid <- testsum$coefficients["soilm","Estimate"]
 slope_se  <- testsum$coefficients["soilm","Std. Error"]
 passtest_bias_vs_soilm <- ((slope_mid - slope_se) < 0 && (slope_mid + slope_se) > 0)
-print(passtest_bias_vs_soilm)
-df_test %>% 
-  ggplot(aes(x = soilm, y = bias_act)) +
-  geom_point() +
-  geom_smooth(method = "lm")
-```
-#得到的结果为TRUE，意味着bias_act与土壤水无关，通过检验，这一步得到了df_test
 
-2. NN$_\text{pot}$ and NN$_\text{act}$ have no bias during moist days.
-```{r}
-df_test %>% 
+## record for output
+df_out_performance <- tibble(slope_bias_vs_soilm_act = slope_mid, passtest_bias_vs_soilm = passtest_bias_vs_soilm)
+
+#2. NN$_\text{pot}$ and NN$_\text{act}$ have no bias during moist days.
+
+df_test_performance %>% 
   tidyr::pivot_longer(cols = c(bias_act, bias_pot), names_to = "source", values_to = "bias") %>% 
   dplyr::filter(moist) %>% 
   ggplot(aes(y = bias, fill = source)) +
   geom_boxplot() +
   geom_hline(aes(yintercept = 0), linetype = "dotted")
-df_test %>% 
+df_test_performance %>% 
   dplyr::filter(moist) %>%
   summarise(bias_act = mean(bias_act, na.rm = TRUE), bias_pot = mean(bias_pot, na.rm = TRUE))
-  ```
-#得到的结果如下：说明不存在，所以模型运作良好
-#  bias_act bias_pot
-#    <dbl>    <dbl>
-#1 -0.00723 -0.00185
 
-## 3. NNpot and NNact have a high R2 and low RMSE during moist days.
-```{r}
-#install.packages("remotes")
-#remotes::install_github("stineb/rbeni")
-source("./R/analyse_mobobs2.R")
-library (LSD)
-library (ggthemes)
-library (RColorBrewer)
-out_modobs_act_pot <- df_test %>% 
-    dplyr::filter(moist) %>%
-    analyse_modobs2 ("nn_pot", "nn_act", type = "heat")#moist days comparison between nn_pot and nn_act
+#3. NN$_\text{pot}$ and NN$_\text{act}$ have a good predictive model performance (high *R*$^2$ and low RMSE measured on cross-validation resamples) during moist days.
+## NN act
+out_modobs <- out$df_cv %>% 
+  dplyr::filter(moist) %>% 
+  rbeni::analyse_modobs2("nn_act", "obs", type = "heat")
+out_modobs$gg +
+  labs(title = "NN act, moist days, CV")
 
- df_out <- df_test %>% 
-    mutate(nnpot_vs_nnact_moist_rsq   = out_modobs_act_pot$df_metrics %>% filter(.metric=="rsq")   %>% pull(.estimate),
-           nnpot_vs_nnact_moist_rmse  = out_modobs_act_pot$df_metrics %>% filter(.metric=="rmse")  %>% pull(.estimate),
-           nnpot_vs_nnact_moist_slope = out_modobs_act_pot$df_metrics %>% filter(.metric=="slope") %>% pull(.estimate))
-  
- ```
+out_modobs <- out$df_all %>% 
+  dplyr::filter(moist) %>% 
+  rbeni::analyse_modobs2("nn_act", "obs", type = "heat")
+out_modobs$gg +
+  labs(title = "NN act, moist days, all")
+## NN pot
+out_modobs <- out$df_cv %>% 
+  dplyr::filter(moist) %>% 
+  rbeni::analyse_modobs2("nn_pot", "obs", type = "heat")
+out_modobs$gg +
+  labs(title = "NN pot, moist days, CV")
+
+out_modobs <- out$df_all %>% 
+  dplyr::filter(moist) %>% 
+  rbeni::analyse_modobs2("nn_pot", "obs", type = "heat")
+out_modobs$gg +
+  labs(title = "NN pot, moist days, all")
+
+#4. NN$_\text{act}$ has a good predictive model performance (high *R*$^2$ and low RMSE measured on cross-validation resamples) during dry days.
+## based on CV
+out_modobs <- out$df_cv %>% 
+  dplyr::filter(!moist) %>% 
+  rbeni::analyse_modobs2("nn_act", "obs", type = "heat")
+out_modobs$gg +
+  labs(title = "NN act, dry days, cv")#actually here it is almost the same when use all or cv
+
+out_modobs <- out$df_all %>% 
+  dplyr::filter(!moist) %>% 
+  rbeni::analyse_modobs2("nn_act", "obs", type = "heat")
+out_modobs$gg +
+  labs(title = "NN act, dry days, all")
+#4. NN$_\text{pot}$ and NN$_\text{act}$ have a high agreement (high *R*$^2$ and low RMSE) during moist days.
+
+## based on all
+out_modobs <- out$df_all %>% 
+  dplyr::filter(moist) %>% 
+  rbeni::analyse_modobs2("nn_pot", "nn_act", type = "heat")
+out_modobs$gg
+labs(title = "NN act, moist days, all")# similar to above but better performance than dry days
+
+out_modobs <- out$df_cv %>% 
+  dplyr::filter(moist) %>% 
+  rbeni::analyse_modobs2("nn_pot", "nn_act", type = "heat")
+out_modobs$gg
+labs(title = "NN act, moist days, cv")# similar to above but better performance than dry days
+
+## Metrics for use as in Stocker et al. (2018)
+## 1. Determine the difference in the bias of NNpot between dry and moist days
+df_ratio_moist <- df_test_performance %>% 
+  dplyr::filter(moist) %>%
+  summarise(ratio_act = median(ratio_act, na.rm = TRUE), ratio_pot = median(ratio_pot, na.rm = TRUE))
+
+df_ratio_dry <- df_test_performance %>% 
+  dplyr::filter(!moist) %>%
+  summarise(ratio_act = median(ratio_act, na.rm = TRUE), ratio_pot = median(ratio_pot, na.rm = TRUE))
+
+## 2. Determine RMSE of NNpot vs. NNact during moist days
+rmse_nnpot_nnact_moist <- df_test_performance %>% 
+  dplyr::filter(moist) %>%
+  yardstick::rmse(nn_act, nn_pot) %>% 
+  pull(.estimate)
+
+df_out_perf <- df_out_performance %>% 
+  mutate(
+    diff_ratio_dry_moist = df_ratio_dry$ratio_pot - df_ratio_moist$ratio_pot,
+    rmse_nnpot_nnact_moist = rmse_nnpot_nnact_moist
+  )
+library(ggpubr)
+
+#now the evaluation of model performance is completed. the save of local variables did make the results very tedious
+
+## Get optimal soil moisture threshold
+df_profile_performance <- profile_soilmthreshold_fvar(
+  df_train,
+  settings,
+  weights = NA,    # optional weights
+  len = 4          # number of soil moisture thresholds
+)
 
 
 
-
-
-## Evaluate performance
-
-The function `test_performance_fvar()` returns a list of all ggplot objects and a data frame with evaluation results for multiple tests.
-```r
-testresults_fvar <- test_performance_fvar(df_nn_soilm_obs, settings)
-```
 
 ## Get optimal soil moisture threshold
 
@@ -185,6 +241,8 @@ The two steps (train/predict and performance evaluation) are executed for a set 
 
 First, run the fvar algorithm for a set of soil moisture thresholds and record performance metrics for each round.
 ```r
+library(dplyr)
+library(plyr)
 df_profile_performance <- profile_soilmthreshold_fvar(
   df_train,
   settings,
